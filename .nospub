@@ -1,0 +1,12 @@
+{
+    "release_globs": [
+        "Config/**",
+        "*.noscfg",
+        "Include/**",
+        "Binaries/*.{dll,dylib,so}"
+    ],
+    "trigger_publish_globs": [
+        "Source/**",
+        "CMakeLists.txt"
+    ]
+}

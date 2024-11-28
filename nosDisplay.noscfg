@@ -1,0 +1,31 @@
+{
+    "info": {
+        "id": {
+            "name": "nos.display",
+            "version": "0.1.0"
+        },
+        "display_name": "nosDisplay",
+        "description": "Plugins related to display",
+        "dependencies": [
+            {
+                "name": "nos.sys.vulkan",
+                "version": "5.8.0"
+            }
+        ],
+        "category": "Media I/O"
+    },
+    "node_definitions": [
+        "Config/DisplayOut.nosdef"
+    ],
+    "custom_types" :[
+    ],
+    "binary_path": "Binaries/nosDisplay",
+    "associated_nodes": [
+        {
+            "category": "Device|Display",
+            "class_name": "DisplayOut",
+          "display_name": "Display Out"
+        }
+    ],
+    "third_party_software": ["./Config/Licenses.json"]
+}
