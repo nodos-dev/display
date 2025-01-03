@@ -52,6 +52,19 @@
 					"type_name": "string",
 					"show_as": "PROPERTY",
 					"can_show_as": "PROPERTY"
+				},
+				{
+					"name": "WindowName",
+					"type_name": "string",
+					"show_as": "PROPERTY",
+					"can_show_as": "INPUT_PIN_OR_PROPERTY",
+					"data": "NONE"
+				},
+				{
+					"name": "ShowCursor",
+					"type_name": "bool",
+					"show_as": "PROPERTY",
+					"can_show_as": "INPUT_PIN_OR_PROPERTY"
 				}
 			],
 			"functions": [

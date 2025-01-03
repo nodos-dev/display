@@ -268,7 +268,8 @@ struct DisplayOutNode : NodeContext
 		UpdateStringList(std::string("Monitor_") + UUID2STR(NodeId), GetPossibleMonitors());
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-		Window = glfwCreateWindow(Resolution.x, Resolution.y, "NOSWindow", nullptr, nullptr);
+		Window = glfwCreateWindow(Resolution.x, Resolution.y, GetWindowName().c_str(), nullptr, nullptr);
+		glfwSetInputMode(Window, GLFW_CURSOR, ShowCursor ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
 		glfwSetWindowUserPointer(Window, this);
 		glfwSetWindowSizeCallback(Window, [](GLFWwindow* window, int width, int height) {
 			auto node = (DisplayOutNode*)glfwGetWindowUserPointer(window);
@@ -434,6 +435,29 @@ struct DisplayOutNode : NodeContext
 			if (customResolutionWasSet)
 				UpdateCustomResolution();
 		}
+		else if (pinName == NOS_NAME_STATIC("ShowCursor"))
+		{
+			ShowCursor = *InterpretPinValue<bool>(value);
+			if (Window)
+				glfwSetInputMode(Window, GLFW_CURSOR, ShowCursor ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+		}
+		else if (pinName == NOS_NAME_STATIC("WindowName"))
+		{
+			WindowName = InterpretPinValue<const char>(value);
+			if(WindowName == "NONE")
+				WindowName = std::nullopt;
+			if (Window)
+				glfwSetWindowTitle(Window, GetWindowName().c_str());
+		}
+	}
+
+	void OnPartialNodeUpdated(nosNodeUpdate const* update) override
+	{
+		if (WindowName)
+			return;
+		if (update->Type == NOS_NODE_UPDATE_DISPLAY_NAME || update->Type == NOS_NODE_UPDATE_UNIQUE_NAME)
+			if (Window)
+				glfwSetWindowTitle(Window, GetWindowName().c_str());
 	}
 
 	void MoveToMonitor()
@@ -579,6 +603,13 @@ struct DisplayOutNode : NodeContext
 		return CustomResolutionSet && Fullscreen;
 	}
 
+	std::string GetWindowName()
+	{
+		if (WindowName)
+			return *WindowName;
+		return GetDisplayName();
+	}
+
 	void UpdateMonitorString()
 	{
 		std::string monitorStr = "NONE";
@@ -644,7 +675,8 @@ struct DisplayOutNode : NodeContext
 	bool Fullscreen = false;
 	bool VSync = false;
 	float RefreshRate = 60.0f;
-	uint64_t MonitorId;
+	bool ShowCursor = false;
+	std::optional<std::string> WindowName = std::nullopt;
 
 	uint32_t ColorDepth = 32;
 	nosFormat ColorFormat = NOS_FORMAT_B8G8R8A8_UNORM;

@@ -9,7 +9,7 @@
 
 #include "CustomResolutionBase.h"
 
-NOS_INIT()
+NOS_INIT_WITH_MIN_REQUIRED_MINOR(13)
 NOS_VULKAN_INIT()
 
 NOS_BEGIN_IMPORT_DEPS()
