@@ -90,6 +90,8 @@ GLFWmonitor* GetMonitorFromName(const char* monitorName)
 	return nullptr;
 }
 
+NOS_REGISTER_NAME(Monitor)
+
 struct DisplayOutNode : NodeContext
 {
 	DisplayOutNode(const fb::Node* node) : NodeContext(node)
@@ -97,10 +99,9 @@ struct DisplayOutNode : NodeContext
 		fb::TVisualizer visualizer;
 		visualizer.type = fb::VisualizerType::COMBO_BOX;
 		visualizer.name = std::string("Monitor_") + UUID2STR(NodeId);
-		SetPinVisualizer(NOS_NAME_STATIC("Monitor"), visualizer);
+		SetPinVisualizer(NSN_Monitor, visualizer);
 		UpdateStringList(std::string("Monitor_") + UUID2STR(NodeId), {"NONE"});
 	}
-
 
 	~DisplayOutNode()
 	{
@@ -409,28 +410,28 @@ struct DisplayOutNode : NodeContext
 		else if (pinName == NOS_NAME_STATIC("RefreshRate"))
 		{
 			RefreshRate = *InterpretPinValue<float>(value);
-			if(CustomResolutionSet)
+			if (CustomResolutionSet)
 				UpdateCustomResolution();
 		}
-		else if (pinName == NOS_NAME_STATIC("Monitor"))
+		else if (pinName == NSN_Monitor)
 		{
 			const char* monitorName = InterpretPinValue<const char>(value);
-			if(strcmp(monitorName, "NONE") == 0 || strlen(monitorName) == 0)
+			if (strcmp(monitorName, "NONE") == 0 || strlen(monitorName) == 0)
 				return;
 			auto newPort = GetPortFromString(monitorName);
-			if(newPort == LockedMonitorPort)
+			if (newPort == LockedMonitorPort)
 				return;
 			bool customResolutionWasSet = CustomResolutionSet;
 			if (CustomResolutionSet)
 			{
 				RevertMonitorResolution(false);
 			}
-			
+
 			LockedMonitorPort = newPort;
 			if (!LockedMonitorPort)
 				return;
 			MoveToMonitor();
-			if(customResolutionWasSet)
+			if (customResolutionWasSet)
 				UpdateCustomResolution();
 		}
 	}
@@ -583,7 +584,7 @@ struct DisplayOutNode : NodeContext
 		std::string monitorStr = "NONE";
 		if (LockedMonitorPort)
 			monitorStr = PortToString(*LockedMonitorPort);
-		SetPinValue(NOS_NAME_STATIC("Monitor"), nosBuffer{ .Data = (void*)monitorStr.c_str(), .Size = monitorStr.size() + 1 });
+		SetPinValue(NSN_Monitor, monitorStr.c_str());
 	}
 
 	std::string PortToString(GPUPortIdentifier port)
