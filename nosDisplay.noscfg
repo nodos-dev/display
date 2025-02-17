@@ -9,7 +9,7 @@
         "dependencies": [
             {
                 "name": "nos.sys.vulkan",
-                "version": "5.25.0"
+                "version": "6.0.0"
             }
         ],
         "category": "Media I/O"
@@ -20,12 +20,5 @@
     "custom_types" :[
     ],
     "binary_path": "Binaries/nosDisplay",
-    "associated_nodes": [
-        {
-            "category": "Device|Display",
-            "class_name": "DisplayOut",
-          "display_name": "Display Out"
-        }
-    ],
     "third_party_software": ["./Config/Licenses.json"]
 }

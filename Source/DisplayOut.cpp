@@ -98,9 +98,9 @@ struct DisplayOutNode : NodeContext
 	{
 		fb::TVisualizer visualizer;
 		visualizer.type = fb::VisualizerType::COMBO_BOX;
-		visualizer.name = std::string("Monitor_") + UUID2STR(NodeId);
+		visualizer.name = std::string("Monitor_") + std::string(NodeId);
 		SetPinVisualizer(NSN_Monitor, visualizer);
-		UpdateStringList(std::string("Monitor_") + UUID2STR(NodeId), {"NONE"});
+		UpdateStringList(std::string("Monitor_") + std::string(NodeId), {"NONE"});
 	}
 
 	~DisplayOutNode()
@@ -167,7 +167,7 @@ struct DisplayOutNode : NodeContext
 			return;
 		nosCmd cmd;
 		nosCmdBeginParams beginParams = { .Name = NOS_NAME("Window node flush cmd"), .AssociatedNodeId = NodeId, .OutCmdHandle = &cmd };
-		nosVulkan->Begin2(&beginParams);
+		nosVulkan->Begin(&beginParams);
 		nosGPUEvent wait;
 		nosCmdEndParams endParams = { .ForceSubmit = true, .OutGPUEventHandle = &wait };
 		nosVulkan->End(cmd, &endParams);
@@ -227,8 +227,7 @@ struct DisplayOutNode : NodeContext
 
 			uint32_t imageIndex;
 			nosVulkan->SwapchainAcquireNextImage(Swapchain, -1, &imageIndex, WaitSemaphore[CurrentFrame]);
-			nosCmd cmd;
-			nosVulkan->Begin("Window", &cmd);
+			nosCmd cmd = vkss::BeginCmd(NOS_NAME("Window"), NodeId);
 			nosVulkan->Copy(cmd, &input, &Images[imageIndex], 0);
 
 			nosVulkan->ImageStateToPresent(cmd, &Images[imageIndex]);
@@ -253,19 +252,19 @@ struct DisplayOutNode : NodeContext
 		return NOS_RESULT_SUCCESS;
 	}
 
-	void OnExitRunnerThread(std::optional<nosUUID> runnerId) override
+	void OnExitRunnerThread(nosExitRunnerThreadParams const& params) override
 	{
-		if (!runnerId)
+		if (!params.RunnerId)
 			return;
 		Clear();
 	}
 
-	void OnEnterRunnerThread(std::optional<nosUUID> runnerId) override
+	void OnEnterRunnerThread(nosEnterRunnerThreadParams const& params) override
 	{
-		if (!runnerId)
+		if (!params.RunnerId)
 			return;
 		glfwInit();
-		UpdateStringList(std::string("Monitor_") + UUID2STR(NodeId), GetPossibleMonitors());
+		UpdateStringList(std::string("Monitor_") + std::string(NodeId), GetPossibleMonitors());
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 		Window = glfwCreateWindow(Resolution.x, Resolution.y, GetWindowName().c_str(), nullptr, nullptr);
@@ -361,7 +360,7 @@ struct DisplayOutNode : NodeContext
 	{
 		nosCmd cmd;
 		nosCmdBeginParams beginParams = { .Name = NOS_NAME("Window node flush cmd"), .AssociatedNodeId = NodeId, .OutCmdHandle = &cmd };
-		nosVulkan->Begin2(&beginParams);
+		nosVulkan->Begin(&beginParams);
 		nosGPUEvent wait;
 		nosCmdEndParams endParams = { .ForceSubmit = true, .OutGPUEventHandle = &wait };
 		nosVulkan->End(cmd, &endParams);
@@ -378,7 +377,7 @@ struct DisplayOutNode : NodeContext
 		nosEngine.ScheduleNode(&params);
 	}
 
-	void OnPinValueChanged(nos::Name pinName, nosUUID pinId, nosBuffer value) override
+	void OnPinValueChanged(nos::Name pinName, uuid const& pinId, nosBuffer value) override
 	{
 		if (pinName == NOS_NAME_STATIC("Resolution"))
 		{
@@ -451,7 +450,7 @@ struct DisplayOutNode : NodeContext
 		}
 	}
 
-	void OnPartialNodeUpdated(nosNodeUpdate const* update) override
+	void OnNodeUpdated(nosNodeUpdate const* update) override
 	{
 		if (WindowName)
 			return;
