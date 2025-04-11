@@ -94,13 +94,14 @@ NOS_REGISTER_NAME(Monitor)
 
 struct DisplayOutNode : NodeContext
 {
-	DisplayOutNode(const fb::Node* node) : NodeContext(node)
+	nosResult OnCreate(const fb::Node* node) override
 	{
 		fb::TVisualizer visualizer;
 		visualizer.type = fb::VisualizerType::COMBO_BOX;
 		visualizer.name = std::string("Monitor_") + std::string(NodeId);
 		SetPinVisualizer(NSN_Monitor, visualizer);
 		UpdateStringList(std::string("Monitor_") + std::string(NodeId), {"NONE"});
+		return NOS_RESULT_SUCCESS;
 	}
 
 	~DisplayOutNode()
