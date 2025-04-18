@@ -2,7 +2,7 @@
     "info": {
         "id": {
             "name": "nos.display",
-            "version": "0.10.0"
+            "version": "0.11.0"
         },
         "display_name": "nosDisplay",
         "description": "Plugins related to display",
