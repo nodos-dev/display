@@ -2,14 +2,14 @@
     "info": {
         "id": {
             "name": "nos.display",
-            "version": "0.3.0"
+            "version": "0.10.0"
         },
         "display_name": "nosDisplay",
         "description": "Plugins related to display",
         "dependencies": [
             {
                 "name": "nos.sys.vulkan",
-                "version": "6.21.0"
+                "version": "6.22.0"
             }
         ],
         "category": "Media I/O"
