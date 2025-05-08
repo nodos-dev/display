@@ -10,7 +10,7 @@ if (NOT WITH_NODOS_WORKSPACE)
 endif()
 
 # Nodos SDK
-nos_find_plugin_sdk("38.0.0" NOS_PLUGIN_SDK_TARGET NOS_SDK_DIR)
+nos_find_plugin_sdk("39.0.0" NOS_PLUGIN_SDK_TARGET NOS_SDK_DIR)
 
 
 # GLFW
