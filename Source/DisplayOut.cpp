@@ -196,7 +196,6 @@ struct DisplayOutNode : NodeContext
 		if (!Window)
 			return;
 		glfwDestroyWindow(Window);
-		glfwTerminate();
 		Window = nullptr;
 	}
 
@@ -264,7 +263,6 @@ struct DisplayOutNode : NodeContext
 	{
 		if (!params.RunnerId)
 			return;
-		glfwInit();
 		UpdateStringList(std::string("Monitor_") + std::string(NodeId), GetPossibleMonitors());
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);

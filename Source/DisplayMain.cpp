@@ -8,6 +8,7 @@
 #include <nosVulkanSubsystem/nosVulkanSubsystem.h>
 
 #include "CustomResolutionBase.h"
+#include "GLFW/glfw3.h"
 
 NOS_INIT()
 NOS_VULKAN_INIT()
@@ -29,14 +30,26 @@ namespace nos::display
 
 	struct DisplayPluginFunctions : nos::PluginFunctions
 	{
+		bool glfwInitialized = false;
 		nosResult Initialize() override
 		{
+			if (!glfwInit())
+			{
+				nosEngine.LogE("Failed to initialize GLFW");
+				return NOS_RESULT_FAILED;
+			}
+			glfwInitialized = true;
 			if (!CustomResolutionBase::Create() || CustomResolutionBase::Get()->Init())
 				nosEngine.LogW("Failed to initialize CustomResolution!");
 			return NOS_RESULT_SUCCESS;
 		}
 		nosResult OnPreUnloadPlugin() override
 		{
+			if (glfwInitialized)
+			{
+				glfwTerminate();
+				glfwInitialized = false;
+			}
 			if (CustomResolutionBase::Get())
 			{
 				CustomResolutionBase::Get()->Shutdown();
