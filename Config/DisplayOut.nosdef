@@ -70,7 +70,8 @@
 						"name": "ShowCursor",
 						"type_name": "bool",
 						"show_as": "PROPERTY",
-						"can_show_as": "INPUT_PIN_OR_PROPERTY"
+						"can_show_as": "INPUT_PIN_OR_PROPERTY",
+						"data": true
 					}
 				],
 				"functions": [
