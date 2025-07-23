@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Nodos/PluginHelpers.hpp>
+#include <Nodos/Plugin.hpp>
 #include <nosVulkanSubsystem/nosVulkanSubsystem.h>
 
 namespace nos::display

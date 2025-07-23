@@ -1,9 +1,9 @@
 #include "CustomResolutionBase.h"
 
-#include <Nodos/PluginHelpers.hpp>
+#include <Nodos/Plugin.hpp>
 #include <nosVulkanSubsystem/Helpers.hpp>
 
-#include "nosUtil/Stopwatch.hpp"
+#include <Nodos/Utils/Stopwatch.hpp>
 #include "GLFW/glfw3.h"
 #if defined(WIN32)
 #define GLFW_EXPOSE_NATIVE_WIN32
