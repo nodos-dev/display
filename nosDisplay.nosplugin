@@ -2,23 +2,18 @@
     "info": {
         "id": {
             "name": "nos.display",
-            "version": "0.11.3"
+            "version": "0.12.0"
         },
         "display_name": "nosDisplay",
         "description": "Plugins related to display",
         "dependencies": [
             {
                 "name": "nos.sys.vulkan",
-                "version": "6.28"
+                "version": "7.0"
             }
         ],
         "category": "Media I/O"
     },
-    "node_definitions": [
-        "Config/DisplayOut.nosdef"
-    ],
-    "custom_types" :[
-    ],
     "binary_path": "Binaries/nosDisplay",
     "third_party_software": ["./Config/Licenses.json"]
 }
