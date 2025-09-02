@@ -42,7 +42,7 @@ nos_group_targets("nvapi" "External")
 set(CMAKE_DEBUG_POSTFIX "")
 
 # nos.sys.vulkan
-nos_get_plugin("nos.sys.vulkan" "6.28" NOS_SYS_VULKAN_TARGET)
+nos_get_plugin("nos.sys.vulkan" "7.0" NOS_SYS_VULKAN_TARGET)
 
 # nosDisplay Plugin
 # ----------
