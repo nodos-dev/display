@@ -10,7 +10,7 @@ if (NOT WITH_NODOS_WORKSPACE)
 endif()
 
 # Nodos SDK
-nos_find_plugin_sdk("39.12.0" NOS_PLUGIN_SDK_TARGET NOS_SDK_DIR)
+nos_find_plugin_sdk("40.0.0" NOS_PLUGIN_SDK_TARGET NOS_SDK_DIR)
 
 
 # GLFW
@@ -42,7 +42,7 @@ nos_group_targets("nvapi" "External")
 set(CMAKE_DEBUG_POSTFIX "")
 
 # nos.sys.vulkan
-nos_get_plugin("nos.sys.vulkan" "7.0" NOS_SYS_VULKAN_TARGET)
+nos_get_plugin("nos.sys.vulkan" "7.1" NOS_SYS_VULKAN_TARGET)
 
 # nosDisplay Plugin
 # ----------
