@@ -15,5 +15,6 @@
         "category": "Media I/O"
     },
     "binary_path": "Binaries/nosDisplay",
-    "third_party_software": ["./Config/Licenses.json"]
+    "third_party_software": ["./Config/Licenses.json"],
+    "sdk_dependency": "40.0"
 }
