@@ -1,7 +1,7 @@
 #include "CustomResolutionBase.h"
 
 #include <Nodos/Plugin.hpp>
-#include <nosVulkanSubsystem/Helpers.hpp>
+#include <nosSysVulkan/Helpers.hpp>
 
 #include <Nodos/Utils/Stopwatch.hpp>
 #include "GLFW/glfw3.h"

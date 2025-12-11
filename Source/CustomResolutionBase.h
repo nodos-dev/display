@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Nodos/Plugin.hpp>
-#include <nosVulkanSubsystem/nosVulkanSubsystem.h>
+#include <nosSysVulkan/nosVulkanSubsystem.h>
 
 namespace nos::display
 {
