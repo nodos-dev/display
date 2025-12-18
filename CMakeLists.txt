@@ -29,4 +29,4 @@ nos_group_targets("nvapi" "External")
 set(CMAKE_DEBUG_POSTFIX "")
 
 target_link_libraries(${NOS_PLUGIN_TARGET} PRIVATE nvapi glfw)
-nos_group_targets(${NOS_PLUGIN_TARGET} "NOS Plugins")
+target_compile_definitions(${NOS_PLUGIN_TARGET} PRIVATE NOS_DISABLE_DEPRECATED)
