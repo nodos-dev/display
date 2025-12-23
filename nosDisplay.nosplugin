@@ -1,20 +1,23 @@
 {
-    "info": {
-        "id": {
-            "name": "nos.display",
-            "version": "0.13.0"
-        },
-        "display_name": "nosDisplay",
-        "description": "Plugins related to display",
-        "dependencies": [
-            {
-                "name": "nos.sys.vulkan",
-                "version": "7.1"
-            }
-        ],
-        "category": "Media I/O"
-    },
-    "binary_path": "Binaries/nosDisplay",
-    "third_party_software": ["./Config/Licenses.json"],
-    "sdk_version": "40.0"
+	"info": {
+		"id": {
+			"name": "nos.display",
+			"version": "0.13.0"
+		},
+		"display_name": "nosDisplay",
+		"description": "Plugins related to display",
+		"dependencies": [
+			{
+				"name": "nos.sys.vulkan",
+				"version": "7.1"
+			}
+		],
+		"category": "Media I/O"
+	},
+	"binary_path": "Binaries/nosDisplay",
+	"third_party_software": [
+		"./Config/Licenses.json"
+	],
+	"sdk_version": "40.0",
+	"schema_version": "1.4-v1"
 }
