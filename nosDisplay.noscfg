@@ -2,7 +2,7 @@
     "info": {
         "id": {
             "name": "nos.display",
-            "version": "0.3.0"
+            "version": "0.4.0"
         },
         "display_name": "nosDisplay",
         "description": "Plugins related to display",
@@ -15,7 +15,8 @@
         "category": "Media I/O"
     },
     "node_definitions": [
-        "Config/DisplayOut.nosdef"
+        "Config/DisplayOut.nosdef",
+        "Config/BufferedDisplayOut.nosdef"
     ],
     "custom_types" :[
     ],
