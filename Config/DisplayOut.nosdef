@@ -9,6 +9,7 @@
 			"node": {
 				"class_name": "DisplayOut",
 				"name": "DisplayOut",
+				"description": "Outputs a texture to a window & allow custom resolution configuration of displays.",
 				"display_name": "Display Out",
 				"contents_type": "Job",
 				"pins": [

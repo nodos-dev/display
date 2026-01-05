@@ -9,6 +9,7 @@
       "node": {
         "id": "03c106a7-3841-496d-8021-8f0672bccd01",
         "name": "BufferedDisplayOut",
+        "description": "Outputs a texture to a window & allow custom resolution configuration of displays. This node is buffered in contrast to the default Display Out node.",
         "class_name": "nos.display.BufferedDisplayOut",
         "pins": [
           {
