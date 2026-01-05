@@ -3,7 +3,7 @@
       "class_name": "nos.display.BufferedDisplayOut",
 			"menu_info": {
 				"category": "Device|Display",
-				"display_name": "Buffered Display Out",
+				"display_name": "Display Out (Buffered)",
         "name_aliases": [ "Window", "Screen", "Swapchain"]
 			},
       "node": {
@@ -2459,7 +2459,7 @@
             { "from": "3fd66e94-3995-4416-bcc6-83df32564d7b", "to": "e56fd006-6042-49da-95a5-218e3376a4e3", "id": "04702ace-4d57-428f-bc07-a96d7457febb" }
           ] },
         "function_category": "Default Node",
-        "display_name": "Buffered Display Out",
+        "display_name": "Display Out",
         "plugin_version": { "major": 0, "minor": 0, "patch": 0 },
         "meta_data_map": [
           { "key": "NodeStatusPortal", "value": "/Auto Resize/ShowStatus;/DisplayOut" },
