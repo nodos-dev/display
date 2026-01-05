@@ -5,12 +5,20 @@
 
 namespace nos::display
 {
+enum ColorFormatBitDepth
+{
+	None = 0,
+	Unorm8Bit = 1, // P8
+	Unorm16Bit = 2, // R5G6B5
+	Unorm32Bit = 3, // A8R8G8B8
+	Float64Bit = 4, // A16B16G16R16F
+};
 struct CustomResolutionInfo
 {
 	nosVec2u Resolution;
 	float RefreshRate;
 	uint32_t ColorDepth = 32;
-	nosFormat ColorFormat = NOS_FORMAT_B8G8R8A8_UNORM;
+	ColorFormatBitDepth ColorFormatBitDepth;
 };
 
 struct GPUPortIdentifier

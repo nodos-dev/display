@@ -44,7 +44,8 @@
 						"name": "VSync",
 						"type_name": "bool",
 						"show_as": "PROPERTY",
-						"can_show_as": "INPUT_PIN_OR_PROPERTY"
+						"can_show_as": "INPUT_PIN_OR_PROPERTY",
+						"def": true
 					},
 					{
 						"name": "RefreshRate",
@@ -64,13 +65,26 @@
 						"type_name": "string",
 						"show_as": "PROPERTY",
 						"can_show_as": "INPUT_PIN_OR_PROPERTY",
-						"data": "NONE"
+						"def": "NONE"
 					},
 					{
 						"name": "ShowCursor",
 						"type_name": "bool",
 						"show_as": "PROPERTY",
 						"can_show_as": "INPUT_PIN_OR_PROPERTY"
+					},
+					{
+						"name": "Internal_CustomResolutionRequested",
+						"type_name": "bool",
+						"show_as": "PROPERTY",
+						"can_show_as": "PROPERTY",
+						"def": false,
+						"meta_data_map": [
+							{
+								"key": "PinHidden",
+								"value": "true"
+							}
+						]
 					}
 				],
 				"functions": [

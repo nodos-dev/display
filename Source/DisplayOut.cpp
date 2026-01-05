@@ -17,7 +17,7 @@
 
 namespace nos::display
 {
-
+NOS_REGISTER_NAME(Internal_CustomResolutionRequested)
 std::vector<std::string> GetPossibleAdapterNames()
 {
 	std::vector<std::string> adapterNames;
@@ -101,6 +101,7 @@ struct DisplayOutNode : NodeContext
 		visualizer.name = std::string("Monitor_") + std::string(NodeId);
 		SetPinVisualizer(NSN_Monitor, visualizer);
 		UpdateStringList(std::string("Monitor_") + std::string(NodeId), {"NONE"});
+		AddPinValueWatcher(NSN_Internal_CustomResolutionRequested);
 	}
 
 	~DisplayOutNode()
@@ -112,6 +113,7 @@ struct DisplayOutNode : NodeContext
 	{
 		nosSwapchainCreateInfo createInfo = {};
 		createInfo.SurfaceHandle = Surface;
+		createInfo.ImageFormat = ColorFormat;
 		// get extent
 		int width, height;
 		glfwGetWindowSize(Window, &width, &height);
@@ -139,8 +141,8 @@ struct DisplayOutNode : NodeContext
 
 	void Clear()
 	{
-		if(CustomResolutionSet)
-			RevertMonitorResolution(false);
+		if(CustomResolutionActive)
+			RevertMonitorResolution();
 		DestroySwapchain();
 		DestroyWindowSurface();
 		DestroyWindow();
@@ -228,13 +230,12 @@ struct DisplayOutNode : NodeContext
 			uint32_t imageIndex;
 			nosVulkan->SwapchainAcquireNextImage(Swapchain, -1, &imageIndex, WaitSemaphore[CurrentFrame]);
 			nosCmd cmd = vkss::BeginCmd(NOS_NAME("Window"), NodeId);
-			nosVulkan->Copy(cmd, &input, &Images[imageIndex], 0);
+				nosVulkan->Copy(cmd, &input, &Images[imageIndex], 0);
 
 			nosVulkan->ImageStateToPresent(cmd, &Images[imageIndex]);
 			nosVulkan->AddWaitSemaphoreToCmd(cmd, WaitSemaphore[CurrentFrame], 1);
 			nosVulkan->AddSignalSemaphoreToCmd(cmd, SignalSemaphore[CurrentFrame], 1);
-
-			nosCmdEndParams endParams{ .ForceSubmit = true };
+			nosCmdEndParams endParams{.ForceSubmit = true};
 			nosVulkan->End(cmd, &endParams);
 			if (nosVulkan->SwapchainPresent(Swapchain, imageIndex, SignalSemaphore[CurrentFrame]) != NOS_RESULT_SUCCESS)
 			{
@@ -242,6 +243,18 @@ struct DisplayOutNode : NodeContext
 			}
 			nosEngine.ScheduleNode(&scheduleParams);
 			CurrentFrame = (CurrentFrame + 1) % FrameCount;
+			if (!CustomResolutionActive)
+			{
+				if (auto monitor = GetGLFWMonitor())
+				{
+					auto mode = glfwGetVideoMode(monitor);
+					if (LastEffectiveRefreshRate != mode->refreshRate)
+					{
+						nosEngine.SendPathRestart(NodeId);
+						LastEffectiveRefreshRate = mode->refreshRate;
+					}
+				}
+			}
 		}
 		else
 		{
@@ -285,7 +298,7 @@ struct DisplayOutNode : NodeContext
 						return;
 					}
 					else // Monitor lost?
-						node->RevertMonitorResolution(false);
+						node->RevertMonitorResolution();
 				}
 				else
 				{
@@ -327,7 +340,7 @@ struct DisplayOutNode : NodeContext
 						}
 					}
 					else // Monitor lost?
-						node->RevertMonitorResolution(false);
+						node->RevertMonitorResolution();
 				}
 			});
 
@@ -348,10 +361,9 @@ struct DisplayOutNode : NodeContext
 		}
 		TryCreateSwapchain();
 		if (LockedMonitorPort)
-		{
 			MoveToMonitor();
+		if (IsCustomResolutionRequested())
 			UpdateCustomResolution();
-		}
 		if (Fullscreen)
 			MakeFullscreen();
 	}
@@ -375,6 +387,35 @@ struct DisplayOutNode : NodeContext
 		params.AddScheduleCount = 1;
 
 		nosEngine.ScheduleNode(&params);
+	}
+
+	void GetScheduleInfo(nosScheduleInfo* out) override
+	{
+		if (!VSync)
+			return;
+
+		float refreshRate = 60.0f;
+		if (CustomResolutionActive)
+		{
+			refreshRate = RefreshRate;
+		}
+		else if (Window)
+		{
+			if (auto monitor = GetGLFWMonitor())
+			{
+				const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+				if (mode && mode->refreshRate > 0)
+					refreshRate = float(mode->refreshRate);
+			}
+		}
+		LastEffectiveRefreshRate = refreshRate;
+
+
+		*out = nosScheduleInfo{
+			.Importance = 1,
+			.DeltaSeconds = {1000, static_cast<uint32_t>(1000.0f * refreshRate)},
+			.Type = NOS_SCHEDULE_TYPE_ON_DEMAND,
+		};
 	}
 
 	void OnPinValueChanged(nos::Name pinName, uuid const& pinId, nosBuffer value) override
@@ -410,7 +451,7 @@ struct DisplayOutNode : NodeContext
 		else if (pinName == NOS_NAME_STATIC("RefreshRate"))
 		{
 			RefreshRate = *InterpretPinValue<float>(value);
-			if (CustomResolutionSet)
+			if (IsCustomResolutionRequested())
 				UpdateCustomResolution();
 		}
 		else if (pinName == NSN_Monitor)
@@ -421,17 +462,14 @@ struct DisplayOutNode : NodeContext
 			auto newPort = GetPortFromString(monitorName);
 			if (newPort == LockedMonitorPort)
 				return;
-			bool customResolutionWasSet = CustomResolutionSet;
-			if (CustomResolutionSet)
-			{
-				RevertMonitorResolution(false);
-			}
+			if (CustomResolutionActive)
+				RevertMonitorResolution();
 
 			LockedMonitorPort = newPort;
 			if (!LockedMonitorPort)
 				return;
 			MoveToMonitor();
-			if (customResolutionWasSet)
+			if (IsCustomResolutionRequested())
 				UpdateCustomResolution();
 		}
 		else if (pinName == NOS_NAME_STATIC("ShowCursor"))
@@ -524,18 +562,18 @@ struct DisplayOutNode : NodeContext
 			.Resolution = Resolution,
 			.RefreshRate = RefreshRate,
 			.ColorDepth = ColorDepth,
-			.ColorFormat = ColorFormat
+			.ColorFormatBitDepth = ColorFormatBitDepth::Unorm32Bit
 		};
-		if(CustomResolutionSet)
-			RevertMonitorResolution(true);
-		if (CustomResolutionSet = CustomResolutionBase::Get()->SetResolutionAndRefreshRate(*monitor, info))
+		if (CustomResolutionActive)
+			RevertMonitorResolution();
+		if (CustomResolutionActive = CustomResolutionBase::Get()->SetResolutionAndRefreshRate(*monitor, info))
 		{
 			LockedMonitorPort = *monitor;
 			UpdateMonitorString();
 		}
 	}
 
-	void RevertMonitorResolution(bool setMonitorPin)
+	void RevertMonitorResolution()
 	{
 		if (!CustomResolutionBase::Get())
 		{
@@ -547,16 +585,11 @@ struct DisplayOutNode : NodeContext
 			nosEngine.LogE("Window not found");
 			return;
 		}
-		if (CustomResolutionSet && LockedMonitorPort)
+		if (CustomResolutionActive && LockedMonitorPort)
 		{
 			if (CustomResolutionBase::Get()->RevertResolution(*LockedMonitorPort))
 			{
-				CustomResolutionSet = false;
-				if (setMonitorPin)
-				{
-					LockedMonitorPort = std::nullopt;
-					UpdateMonitorString();
-				}
+				CustomResolutionActive = false;
 			}
 		}
 	}
@@ -585,13 +618,16 @@ struct DisplayOutNode : NodeContext
 		outFunctionNames[0] = NOS_NAME_STATIC("ForceUpdateMonitorResolution");
 		outFunction[0] = [](void* ctx, nosFunctionExecuteParams* functionParams)
 			{
+				reinterpret_cast<DisplayOutNode*>(ctx)->SetPinValue(NSN_Internal_CustomResolutionRequested,
+																nos::Buffer::From(true));
 				reinterpret_cast<DisplayOutNode*>(ctx)->UpdateCustomResolution();
 				return NOS_RESULT_SUCCESS;
 			};
 		outFunctionNames[1] = NOS_NAME_STATIC("RevertMonitorResolution");
 		outFunction[1] = [](void* ctx, nosFunctionExecuteParams* functionParams)
 			{
-				reinterpret_cast<DisplayOutNode*>(ctx)->RevertMonitorResolution(true);
+				reinterpret_cast<DisplayOutNode*>(ctx)->SetPinValue(NSN_Internal_CustomResolutionRequested, nos::Buffer::From(false));
+				reinterpret_cast<DisplayOutNode*>(ctx)->RevertMonitorResolution();
 				return NOS_RESULT_SUCCESS;
 			};
 		return NOS_RESULT_SUCCESS;
@@ -599,7 +635,7 @@ struct DisplayOutNode : NodeContext
 
 	bool IsWindowLocked()
 	{
-		return CustomResolutionSet && Fullscreen;
+		return CustomResolutionActive && Fullscreen;
 	}
 
 	std::string GetWindowName()
@@ -661,6 +697,14 @@ struct DisplayOutNode : NodeContext
 		return monitors;
 	}
 
+	bool IsCustomResolutionRequested()
+	{
+		auto val = GetWatchedPinValue(NSN_Internal_CustomResolutionRequested);
+		if (!val)
+			return false;
+		return *InterpretPinValue<bool>(*val);
+	}
+
 	GLFWwindow* Window = nullptr;
 	std::vector<nosSemaphore> WaitSemaphore{};
 	std::vector<nosSemaphore> SignalSemaphore{};
@@ -674,13 +718,14 @@ struct DisplayOutNode : NodeContext
 	bool Fullscreen = false;
 	bool VSync = false;
 	float RefreshRate = 60.0f;
+	std::optional<float> LastEffectiveRefreshRate = 0.0f;
 	bool ShowCursor = false;
 	std::optional<std::string> WindowName = std::nullopt;
 
 	uint32_t ColorDepth = 32;
-	nosFormat ColorFormat = NOS_FORMAT_B8G8R8A8_UNORM;
+	nosFormat ColorFormat = NOS_FORMAT_B8G8R8A8_SRGB;
 
-	bool CustomResolutionSet = false;
+	bool CustomResolutionActive = false;
 	std::optional<GPUPortIdentifier> LockedMonitorPort;
 };
 
