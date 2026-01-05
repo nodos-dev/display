@@ -410,7 +410,6 @@ struct DisplayOutNode : NodeContext
 		}
 		LastEffectiveRefreshRate = refreshRate;
 
-
 		*out = nosScheduleInfo{
 			.Importance = 1,
 			.DeltaSeconds = {1000, static_cast<uint32_t>(1000.0f * refreshRate)},
@@ -718,7 +717,7 @@ struct DisplayOutNode : NodeContext
 	bool Fullscreen = false;
 	bool VSync = false;
 	float RefreshRate = 60.0f;
-	std::optional<float> LastEffectiveRefreshRate = 0.0f;
+	float LastEffectiveRefreshRate = 0.0f;
 	bool ShowCursor = false;
 	std::optional<std::string> WindowName = std::nullopt;
 
