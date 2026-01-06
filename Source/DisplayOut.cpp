@@ -195,11 +195,11 @@ struct DisplayOutNode : NodeContext
 
 	void DestroyWindow()
 	{
-		CachedMonitorPort = std::nullopt;
-		CachedGLFWMonitor = nullptr;
+		ResetWindowCurrentMonitorCache();
 		if (!Window)
 			return;
 		glfwDestroyWindow(Window);
+		PortToGLFWMonitor.clear();
 		glfwTerminate();
 		Window = nullptr;
 	}
@@ -305,6 +305,7 @@ struct DisplayOutNode : NodeContext
 		glfwSetWindowUserPointer(Window, this);
 		glfwSetWindowSizeCallback(Window, [](GLFWwindow* window, int width, int height) {
 			auto node = (DisplayOutNode*)glfwGetWindowUserPointer(window);
+			node->ResetWindowCurrentMonitorCache();
 			if (node->IsWindowLocked())
 			{
 				if (node->Resolution.x != width || node->Resolution.y != height)
@@ -328,10 +329,21 @@ struct DisplayOutNode : NodeContext
 			}
 			node->TryCreateSwapchain();
 		});
+		RequeryPortToGLFWMonitors();
+		for (auto& [port, monitor] : PortToGLFWMonitor)
+		{
+			glfwSetMonitorUserPointer(monitor, this);
+			glfwSetMonitorCallback([](GLFWmonitor* monitor, int event) {
+				auto node = (DisplayOutNode*)glfwGetMonitorUserPointer(monitor);
+				node->RequeryPortToGLFWMonitors();
+				node->ResetWindowCurrentMonitorCache();
+			});
+		}
 		glfwSetWindowIconifyCallback(Window, [](GLFWwindow* window, int iconified) {
 			auto node = (DisplayOutNode*)glfwGetWindowUserPointer(window);
 			if (iconified == GLFW_TRUE && node->IsWindowLocked())
 				glfwRestoreWindow(window);
+			node->ResetWindowCurrentMonitorCache();
 		});
 		//glfwSetWindowFocusCallback(Window, [](GLFWwindow* window, int focused) {
 		//	auto node = (DisplayOutNode*)glfwGetWindowUserPointer(window);
@@ -340,13 +352,14 @@ struct DisplayOutNode : NodeContext
 		//});
 		glfwSetWindowCloseCallback(Window, [](GLFWwindow* window) {
 			auto node = (DisplayOutNode*)glfwGetWindowUserPointer(window);
-			if(node->IsWindowLocked())
+			if (node->IsWindowLocked())
 				glfwSetWindowShouldClose(window, GLFW_FALSE);
 		});
 
 		glfwSetWindowPosCallback(Window, [](GLFWwindow* window, int posx, int posy)
 			{
 				auto node = (DisplayOutNode*)glfwGetWindowUserPointer(window);
+				node->ResetWindowCurrentMonitorCache();
 				if (node->IsWindowLocked())
 				{
 					if (auto monitor = node->GetGLFWMonitor())
@@ -476,8 +489,6 @@ struct DisplayOutNode : NodeContext
 		else if (pinName == NSN_Monitor)
 		{
 			const char* monitorName = InterpretPinValue<const char>(value);
-			if (strcmp(monitorName, "NONE") == 0 || strlen(monitorName) == 0)
-				return;
 			auto newPort = GetPortFromString(monitorName);
 			if (newPort == LockedMonitorPort)
 				return;
@@ -535,6 +546,8 @@ struct DisplayOutNode : NodeContext
 	{
 		if(LockedMonitorPort.has_value())
 			return *LockedMonitorPort;
+		if (CachedMonitorPort.has_value())
+			return *CachedMonitorPort;
 		auto monitor = get_current_monitor(Window);
 		if (!monitor)
 			monitor = glfwGetWindowMonitor(Window);
@@ -544,7 +557,11 @@ struct DisplayOutNode : NodeContext
 		const char* adapterName = glfwGetWin32Adapter(monitor);
 #endif
 		if (auto customRes = CustomResolutionBase::Get())
-			return customRes->GetGPUPortIdFromAdapterName(adapterName);
+		{
+			auto port = customRes->GetGPUPortIdFromAdapterName(adapterName);
+			CachedMonitorPort = port;
+			return port;
+		}
 		return std::nullopt;
 	}
 
@@ -553,18 +570,39 @@ struct DisplayOutNode : NodeContext
 		auto port = GetWindowGPUPortId();
 		if (!port)
 			return nullptr;
-		if (CachedMonitorPort == port && CachedGLFWMonitor)
+		// First try the port to monitor map
+		if (auto it = PortToGLFWMonitor.find(*port); it != PortToGLFWMonitor.end())
 		{
-			return CachedGLFWMonitor;
+			return it->second;
 		}
-		CachedMonitorPort = port;
 		if (auto adapterName = CustomResolutionBase::Get()->GetAdapterName(*port, GetPossibleAdapterNames()))
 		{
 			auto monitor = GetGLFWMonitorFromAdapterName(adapterName->c_str());
-			CachedGLFWMonitor = monitor;
 			return monitor;
 		}
 		return nullptr;
+	}
+
+	void RequeryPortToGLFWMonitors()
+	{
+		PortToGLFWMonitor.clear();
+		if (!CustomResolutionBase::Get())
+			return;
+		auto activePorts = CustomResolutionBase::Get()->GetActivePortIds();
+		for (auto& port : activePorts)
+		{
+			if (auto adapterName = CustomResolutionBase::Get()->GetAdapterName(port, GetPossibleAdapterNames()))
+			{
+				auto monitor = GetGLFWMonitorFromAdapterName(adapterName->c_str());
+				if (monitor)
+					PortToGLFWMonitor[port] = monitor;
+			}
+		}
+	}
+
+	void ResetWindowCurrentMonitorCache()
+	{ 
+		CachedMonitorPort = std::nullopt;
 	}
 
 	void UpdateCustomResolution()
@@ -720,6 +758,7 @@ struct DisplayOutNode : NodeContext
 	{
 		auto activePorts = CustomResolutionBase::Get()->GetActivePortIds();
 		std::vector<std::string> monitors;
+		monitors.push_back("NONE");
 		for (auto& port : activePorts)
 			monitors.push_back(PortToString(port));
 		return monitors;
@@ -756,7 +795,8 @@ struct DisplayOutNode : NodeContext
 
 	bool CustomResolutionActive = false;
 	std::optional<GPUPortIdentifier> LockedMonitorPort, CachedMonitorPort;
-	GLFWmonitor* CachedGLFWMonitor = nullptr;
+
+	std::unordered_map<GPUPortIdentifier, GLFWmonitor*> PortToGLFWMonitor;
 };
 
 nosResult RegisterDisplayOut(nosNodeFunctions* fn)
