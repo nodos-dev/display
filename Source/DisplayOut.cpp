@@ -128,6 +128,7 @@ struct DisplayOutNode : NodeContext
 		nosVulkan->GetSwapchainImages(Swapchain, Images.data());
 		WaitSemaphore.resize(FrameCount);
 		SignalSemaphore.resize(FrameCount);
+		WaitEvents.resize(FrameCount);
 		for (int i = 0; i < FrameCount; i++)
 		{
 #ifdef CreateSemaphore
@@ -194,6 +195,8 @@ struct DisplayOutNode : NodeContext
 
 	void DestroyWindow()
 	{
+		CachedMonitorPort = std::nullopt;
+		CachedGLFWMonitor = nullptr;
 		if (!Window)
 			return;
 		glfwDestroyWindow(Window);
@@ -228,14 +231,31 @@ struct DisplayOutNode : NodeContext
 			}
 
 			uint32_t imageIndex;
-			nosVulkan->SwapchainAcquireNextImage(Swapchain, -1, &imageIndex, WaitSemaphore[CurrentFrame]);
+			constexpr uint32_t retryCount = 2;
+			for (uint32_t retryIndex = 0; retryIndex < retryCount; retryIndex++)
+			{
+				auto acquireResult = nosVulkan->SwapchainAcquireNextImage(
+					Swapchain, 100'000'000, &imageIndex, WaitSemaphore[CurrentFrame]);
+				if (acquireResult == NOS_RESULT_SUCCESS)
+					break;
+				if (acquireResult == NOS_RESULT_TIMEOUT)
+					return NOS_RESULT_PENDING;
+				if (retryIndex + 1 >= retryCount)
+					return NOS_RESULT_FAILED;
+				if (!TryCreateSwapchain())
+					return NOS_RESULT_FAILED;
+			}
+			if (WaitEvents[CurrentFrame])
+			{
+				nosVulkan->WaitGpuEvent(&WaitEvents[CurrentFrame], UINT64_MAX);
+			}
 			nosCmd cmd = vkss::BeginCmd(NOS_NAME("Window"), NodeId);
 				nosVulkan->Copy(cmd, &input, &Images[imageIndex], 0);
 
 			nosVulkan->ImageStateToPresent(cmd, &Images[imageIndex]);
 			nosVulkan->AddWaitSemaphoreToCmd(cmd, WaitSemaphore[CurrentFrame], 1);
 			nosVulkan->AddSignalSemaphoreToCmd(cmd, SignalSemaphore[CurrentFrame], 1);
-			nosCmdEndParams endParams{.ForceSubmit = true};
+			nosCmdEndParams endParams{.ForceSubmit = true, .OutGPUEventHandle = &WaitEvents[CurrentFrame]};
 			nosVulkan->End(cmd, &endParams);
 			if (nosVulkan->SwapchainPresent(Swapchain, imageIndex, SignalSemaphore[CurrentFrame]) != NOS_RESULT_SUCCESS)
 			{
@@ -533,8 +553,17 @@ struct DisplayOutNode : NodeContext
 		auto port = GetWindowGPUPortId();
 		if (!port)
 			return nullptr;
-		if(auto adapterName = CustomResolutionBase::Get()->GetAdapterName(*port, GetPossibleAdapterNames()))
-			return GetGLFWMonitorFromAdapterName(adapterName->c_str());
+		if (CachedMonitorPort == port && CachedGLFWMonitor)
+		{
+			return CachedGLFWMonitor;
+		}
+		CachedMonitorPort = port;
+		if (auto adapterName = CustomResolutionBase::Get()->GetAdapterName(*port, GetPossibleAdapterNames()))
+		{
+			auto monitor = GetGLFWMonitorFromAdapterName(adapterName->c_str());
+			CachedGLFWMonitor = monitor;
+			return monitor;
+		}
 		return nullptr;
 	}
 
@@ -707,6 +736,7 @@ struct DisplayOutNode : NodeContext
 	GLFWwindow* Window = nullptr;
 	std::vector<nosSemaphore> WaitSemaphore{};
 	std::vector<nosSemaphore> SignalSemaphore{};
+	std::vector<nosGPUEvent> WaitEvents{};
 	std::vector<nosResourceShareInfo> Images{};
 	uint32_t FrameCount = 0;
 	uint32_t CurrentFrame = 0;
@@ -725,7 +755,8 @@ struct DisplayOutNode : NodeContext
 	nosFormat ColorFormat = NOS_FORMAT_B8G8R8A8_SRGB;
 
 	bool CustomResolutionActive = false;
-	std::optional<GPUPortIdentifier> LockedMonitorPort;
+	std::optional<GPUPortIdentifier> LockedMonitorPort, CachedMonitorPort;
+	GLFWmonitor* CachedGLFWMonitor = nullptr;
 };
 
 nosResult RegisterDisplayOut(nosNodeFunctions* fn)
