@@ -111,9 +111,40 @@ struct DisplayOutNode : NodeContext
 
 	bool CreateSwapchain()
 	{
+		uint32_t formatCount = 0;
+		nosVulkan->GetSurfaceFormats(Surface, &formatCount, nullptr);
+		std::vector<nosSurfaceFormat> formats(formatCount);
+		nosVulkan->GetSurfaceFormats(Surface, &formatCount, formats.data());
+		
+		std::queue<nosSurfaceFormat> preferredFormats;
+		//preferredFormats.push({NOS_FORMAT_A2B10G10R10_UNORM_PACK32, NOS_COLOR_SPACE_HDR10_HLG});
+		//preferredFormats.push({NOS_FORMAT_A2B10G10R10_UNORM_PACK32, NOS_COLOR_SPACE_HDR10_ST2084});
+		preferredFormats.push({NOS_FORMAT_B8G8R8A8_SRGB, NOS_COLOR_SPACE_SRGB_NONLINEAR_KHR});
+
+		std::optional<nosSurfaceFormat> selectedFormat = {};
+		while (!preferredFormats.empty())
+		{
+			auto preferredFormat = preferredFormats.front();
+			preferredFormats.pop();
+			for (const auto& availableFormat : formats)
+			{
+				if (availableFormat.Format == preferredFormat.Format &&
+					availableFormat.ColorSpace == preferredFormat.ColorSpace)
+				{
+					selectedFormat = availableFormat;
+					break;
+				}
+			}
+			if (selectedFormat.has_value())
+				break;
+		}
+		if (!selectedFormat.has_value())
+			return false;
+
 		nosSwapchainCreateInfo createInfo = {};
 		createInfo.SurfaceHandle = Surface;
-		createInfo.ImageFormat = ColorFormat;
+		createInfo.ImageFormat = selectedFormat->Format;
+		createInfo.ColorSpace = selectedFormat->ColorSpace;
 		// get extent
 		int width, height;
 		glfwGetWindowSize(Window, &width, &height);
@@ -250,7 +281,7 @@ struct DisplayOutNode : NodeContext
 				nosVulkan->WaitGpuEvent(&WaitEvents[CurrentFrame], UINT64_MAX);
 			}
 			nosCmd cmd = vkss::BeginCmd(NOS_NAME("Window"), NodeId);
-				nosVulkan->Copy(cmd, &input, &Images[imageIndex], 0);
+			nosVulkan->Copy(cmd, &input, &Images[imageIndex], 0);
 
 			nosVulkan->ImageStateToPresent(cmd, &Images[imageIndex]);
 			nosVulkan->AddWaitSemaphoreToCmd(cmd, WaitSemaphore[CurrentFrame], 1);
@@ -791,7 +822,6 @@ struct DisplayOutNode : NodeContext
 	std::optional<std::string> WindowName = std::nullopt;
 
 	uint32_t ColorDepth = 32;
-	nosFormat ColorFormat = NOS_FORMAT_B8G8R8A8_SRGB;
 
 	bool CustomResolutionActive = false;
 	std::optional<GPUPortIdentifier> LockedMonitorPort, CachedMonitorPort;
