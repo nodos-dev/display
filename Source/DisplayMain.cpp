@@ -39,7 +39,7 @@ namespace nos::display
 				return NOS_RESULT_FAILED;
 			}
 			glfwInitialized = true;
-			if (!CustomResolutionBase::Create() || CustomResolutionBase::Get()->Init())
+			if (!CustomResolutionBase::Create() || !CustomResolutionBase::Get()->Init())
 				nosEngine.LogW("Failed to initialize CustomResolution!");
 			return NOS_RESULT_SUCCESS;
 		}

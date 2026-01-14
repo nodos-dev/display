@@ -9,15 +9,14 @@
 		"dependencies": [
 			{
 				"name": "nos.sys.vulkan",
-				"version": "7.1"
+				"version": "8.0"
 			}
 		],
 		"category": "Media I/O"
 	},
-	"binary_path": "Binaries/nosDisplay",
 	"third_party_software": [
 		"./Config/Licenses.json"
 	],
-	"sdk_version": "40.0",
+	"sdk_version": "41.0",
 	"schema_version": "1.4-v1"
 }

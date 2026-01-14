@@ -61,14 +61,14 @@ struct NVIDIACustomResolution : CustomResolutionBase
 		customDisplay.width = info.Resolution.x;
 		customDisplay.height = info.Resolution.y;
 		customDisplay.depth = info.ColorDepth;
-		switch (info.ColorFormat)
+		switch (info.ColorFormatBitDepth)
 		{
-			case NOS_FORMAT_B8G8R8A8_UNORM:
-				customDisplay.colorFormat = NV_FORMAT_A8R8G8B8;
-				break;
-			default:
-				nosEngine.LogE("Unsupported color format: %d", info.ColorFormat);
-				return false;
+		case ColorFormatBitDepth::None: customDisplay.colorFormat = NV_FORMAT_UNKNOWN; break;
+		case ColorFormatBitDepth::Unorm8Bit: customDisplay.colorFormat = NV_FORMAT_P8; break;
+		case ColorFormatBitDepth::Unorm16Bit: customDisplay.colorFormat = NV_FORMAT_R5G6B5; break;
+		case ColorFormatBitDepth::Unorm32Bit: customDisplay.colorFormat = NV_FORMAT_A8R8G8B8; break;
+		case ColorFormatBitDepth::Float64Bit: customDisplay.colorFormat = NV_FORMAT_A16B16G16R16F; break;
+		default: nosEngine.LogE("Unsupported color format bit depth: %d", info.ColorFormatBitDepth); return false;
 		}
 		customDisplay.srcPartition.x = 0;
 		customDisplay.srcPartition.y = 0;
