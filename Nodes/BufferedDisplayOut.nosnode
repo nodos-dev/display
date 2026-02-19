@@ -555,7 +555,7 @@
             {
               "id": "145f82b2-b41c-41b6-8635-72e068da1f4c",
               "name": "RingBuffer",
-              "class_name": "nos.utilities.RingBuffer",
+              "class_name": "nos.resource.RingBuffer",
               "pins": [
                 {
                   "id": "e56fd006-6042-49da-95a5-218e3376a4e3",
@@ -810,7 +810,7 @@
             {
               "id": "4fe39653-773b-4b0f-9781-2eb06e9ad978",
               "name": "Auto Resize",
-              "class_name": "nos.utilities.AutoResize",
+              "class_name": "nos.imageprocessing.AutoResize",
               "pins": [
                 {
                   "id": "3fd66e94-3995-4416-bcc6-83df32564d7b",
@@ -1025,7 +1025,7 @@
                   {
                     "id": "d65b849f-584f-4e89-8110-3b6d12ab634a",
                     "name": "Resize",
-                    "class_name": "nos.utilities.Resize",
+                    "class_name": "nos.imageprocessing.Resize",
                     "pins": [
                       {
                         "id": "c404c609-96e3-4f66-94e1-390de2adcd63",
@@ -1086,7 +1086,7 @@
                       {
                         "id": "8925394d-4eb6-48d6-b47f-44dfd0eaefc9",
                         "name": "Method",
-                        "type_name": "nos.utilities.ResizeMethod",
+                        "type_name": "nos.imageprocessing.ResizeMethod",
                         "show_as": "PROPERTY",
                         "can_show_as": "INPUT_OUTPUT_PROPERTY",
                         "visualizer": {
@@ -1278,7 +1278,7 @@
                   {
                     "id": "ed748b27-d56a-4c80-9628-851cac2d4ef8",
                     "name": "ShowStatus",
-                    "class_name": "nos.utilities.ShowStatus",
+                    "class_name": "nos.flow.ShowStatus",
                     "pins": [
                       {
                         "id": "da77f809-eb50-40c5-9378-b43f18503564",
