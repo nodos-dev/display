@@ -151,6 +151,49 @@ struct DisplayOutNode : NodeContext
 		DestroyWindow();
 	}
 
+	// Keep the RefreshRate pin in sync with VSync semantics. With VSync on the
+	// rate is dictated by the monitor and the user shouldn't edit it — push
+	// the live rate into the pin and flag it PASSIVE. With VSync off the user
+	// owns the value again, so restore it to ACTIVE. Must be called from the
+	// main thread because it reads GLFW monitor state.
+	void ApplyVSyncPinStateOnMain()
+	{
+		auto refreshRatePinId = GetPinId(NOS_NAME_STATIC("RefreshRate"));
+		if (!refreshRatePinId)
+			return;
+
+		if (VSync)
+		{
+			// GetGLFWMonitor walks glfwGetWindowPos(Window, ...), which asserts
+			// when called before OnEnterRunnerThreadMain has created Window —
+			// that happens during graph load, where serialized pin values arrive
+			// before the runner thread spins up. Skip the value refresh here;
+			// OnEnterRunnerThreadMain will call us again once Window is live.
+			if (Window)
+			{
+				int monitorRate = 0;
+				if (auto monitor = GetGLFWMonitor())
+				{
+					if (auto mode = glfwGetVideoMode(monitor))
+						monitorRate = mode->refreshRate;
+				}
+				if (monitorRate > 0)
+				{
+					float f = float(monitorRate);
+					SetPinValue(*refreshRatePinId, f);
+					RefreshRate = f;
+					LastEffectiveRefreshRate = f;
+				}
+			}
+			SetPinOrphanState(*refreshRatePinId, fb::PinOrphanStateType::PASSIVE,
+							  "Driven by the monitor's refresh rate while VSync is enabled.");
+		}
+		else
+		{
+			SetPinOrphanState(*refreshRatePinId, fb::PinOrphanStateType::ACTIVE);
+		}
+	}
+
 	bool TryCreateSwapchain()
 	{
 		if (Swapchain)
@@ -200,7 +243,6 @@ struct DisplayOutNode : NodeContext
 			return;
 		glfwDestroyWindow(Window);
 		PortToGLFWMonitor.clear();
-		glfwTerminate();
 		Window = nullptr;
 	}
 
@@ -337,6 +379,8 @@ struct DisplayOutNode : NodeContext
 							refreshChanged = true;
 						}
 					}
+					if (refreshChanged && VSync)
+						ApplyVSyncPinStateOnMain();
 				});
 				if (refreshChanged)
 					nosEngine.SendPathRestart(NodeId);
@@ -471,6 +515,7 @@ struct DisplayOutNode : NodeContext
 			UpdateCustomResolution();
 		if (Fullscreen)
 			MakeFullscreen();
+		ApplyVSyncPinStateOnMain();
 	}
 
 	void OnPathStop() override
@@ -556,6 +601,7 @@ struct DisplayOutNode : NodeContext
 		{
 			VSync = *InterpretObjectData<bool>(value);
 			TryCreateSwapchain();
+			ApplyVSyncPinStateOnMain();
 		}
 		else if (pinName == NOS_NAME_STATIC("RefreshRate"))
 		{
@@ -578,6 +624,8 @@ struct DisplayOutNode : NodeContext
 			MoveToMonitor();
 			if (IsCustomResolutionRequested())
 				UpdateCustomResolution();
+			if (VSync)
+				ApplyVSyncPinStateOnMain();
 		}
 		else if (pinName == NOS_NAME_STATIC("ShowCursor"))
 		{
@@ -621,11 +669,15 @@ struct DisplayOutNode : NodeContext
 
 	// Fallback port identifier used when there is no CustomResolutionBase
 	// backend (e.g. macOS — NVAPI is Windows-only). We encode the
-	// GLFWmonitor pointer into GPUId so the rest of the code can keep using
-	// GPUPortIdentifier uniformly, and GetGLFWMonitor can decode it back.
+	// platform-stable monitor id into GPUId (CGDirectDisplayID on macOS,
+	// raw pointer on Win/Linux) so the rest of the code can keep using
+	// GPUPortIdentifier uniformly, and GetGLFWMonitor can always resolve
+	// to a fresh GLFWmonitor* — even after GLFW re-enumeration invalidates
+	// old pointers.
 	static GPUPortIdentifier PortFromGLFWMonitor(GLFWmonitor* monitor)
 	{
-		return GPUPortIdentifier{.GPUId = monitor, .PortId = 0};
+		auto id = platform::GetMonitorStableId(monitor);
+		return GPUPortIdentifier{.GPUId = reinterpret_cast<void*>(id), .PortId = 0};
 	}
 
 	std::optional<GPUPortIdentifier> GetWindowGPUPortId()
@@ -657,19 +709,21 @@ struct DisplayOutNode : NodeContext
 		auto port = GetWindowGPUPortId();
 		if (!port)
 			return nullptr;
-		// First try the port to monitor map
-		if (auto it = PortToGLFWMonitor.find(*port); it != PortToGLFWMonitor.end())
-		{
-			return it->second;
-		}
+		// First try the port to monitor map. On macOS the map's monitor
+		// pointers can become stale between requeries, so we always
+		// fall through to a fresh enumeration if the cached pointer
+		// doesn't match the current list.
 		if (auto* customRes = CustomResolutionBase::Get())
 		{
+			if (auto it = PortToGLFWMonitor.find(*port); it != PortToGLFWMonitor.end())
+				return it->second;
 			if (auto adapterName = customRes->GetAdapterName(*port, GetPossibleAdapterNames()))
 				return GetGLFWMonitorFromAdapterName(adapterName->c_str());
 			return nullptr;
 		}
-		// No backend: GPUId is the GLFWmonitor* itself.
-		return static_cast<GLFWmonitor*>(port->GPUId);
+		// No backend: resolve the persisted stable id back to a fresh
+		// GLFWmonitor* every time. Do not cache the pointer in callers.
+		return platform::GetMonitorByStableId(reinterpret_cast<uintptr_t>(port->GPUId));
 	}
 
 	void RequeryPortToGLFWMonitors()
@@ -824,9 +878,9 @@ struct DisplayOutNode : NodeContext
 				if (auto monitor = GetGLFWMonitorFromAdapterName(adapterName->c_str()))
 					displayDisplayName = glfwGetMonitorName(monitor);
 		}
-		else if (auto* monitor = static_cast<GLFWmonitor*>(port.GPUId))
+		else if (auto* monitor = platform::GetMonitorByStableId(
+					 reinterpret_cast<uintptr_t>(port.GPUId)))
 		{
-			// No CustomResolutionBase: GPUId is the GLFWmonitor* we want.
 			if (const char* name = glfwGetMonitorName(monitor))
 				displayDisplayName = name;
 		}
