@@ -27,4 +27,20 @@ const char* GetAdapterName(GLFWmonitor* monitor);
 //   Linux/X11: Window (xcb/xlib window id)
 //   macOS: CAMetalLayer* attached to the GLFW window's content view
 void* GetVulkanWindowHandle(GLFWwindow* window);
+
+// Returns an id for `monitor` that survives GLFW re-enumeration so it's
+// safe to persist inside a port identifier or serialized pin value.
+//   macOS: CGDirectDisplayID (raw GLFWmonitor* is invalidated whenever
+//          monitor configuration changes — including during window
+//          creation, causing glfwGetMonitorPos on a stale pointer to
+//          crash in _glfwGetMonitorPosCocoa).
+//   Windows / Linux: the raw pointer, which GLFW keeps stable there.
+// Returns 0 if `monitor` is null.
+uintptr_t GetMonitorStableId(GLFWmonitor* monitor);
+
+// Inverse of GetMonitorStableId: walks the current `glfwGetMonitors()`
+// list and returns the monitor whose stable id matches `id`, or nullptr.
+// Callers must only use the returned pointer transiently — do not store
+// it; re-resolve via this function when needed.
+GLFWmonitor* GetMonitorByStableId(uintptr_t id);
 }

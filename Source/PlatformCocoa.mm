@@ -63,6 +63,29 @@ void* GetVulkanWindowHandle(GLFWwindow* window)
 	return (__bridge void*)metalLayer;
 }
 
+uintptr_t GetMonitorStableId(GLFWmonitor* monitor)
+{
+	if (!monitor)
+		return 0;
+	// CGDirectDisplayID is stable across GLFW re-enumerations and across
+	// monitor connect/disconnect events, unlike the raw GLFWmonitor*.
+	return static_cast<uintptr_t>(glfwGetCocoaMonitor(monitor));
+}
+
+GLFWmonitor* GetMonitorByStableId(uintptr_t id)
+{
+	if (!id)
+		return nullptr;
+	int count = 0;
+	GLFWmonitor** monitors = glfwGetMonitors(&count);
+	for (int i = 0; i < count; ++i)
+	{
+		if (GetMonitorStableId(monitors[i]) == id)
+			return monitors[i];
+	}
+	return nullptr;
+}
+
 void RunOnMainThread(std::function<void()> fn)
 {
 	if (!fn)
