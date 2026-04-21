@@ -1,4 +1,5 @@
 #include "CustomResolutionBase.h"
+#include "Platform.h"
 
 #include <Nodos/Plugin.hpp>
 #include <nosSysVulkan/Helpers.hpp>
@@ -6,14 +7,6 @@
 #include <Nodos/Utils/Stopwatch.hpp>
 #include <unordered_map>
 #include "GLFW/glfw3.h"
-#if defined(WIN32)
-#define GLFW_EXPOSE_NATIVE_WIN32
-#elif defined(__linux)
-#define GLFW_EXPOSE_NATIVE_X11
-#else
-#error "Unsupported platform"
-#endif
-#include "GLFW/glfw3native.h"
 
 
 namespace nos::display
@@ -25,7 +18,7 @@ std::vector<std::string> GetPossibleAdapterNames()
 	int monitorCount;
 	GLFWmonitor** monitors = glfwGetMonitors(&monitorCount);
 	for (int i = 0; i < monitorCount; i++)
-		adapterNames.push_back(glfwGetWin32Adapter(monitors[i]));
+		adapterNames.push_back(platform::GetAdapterName(monitors[i]));
 	return adapterNames;
 }
 
@@ -35,7 +28,7 @@ GLFWmonitor* GetGLFWMonitorFromAdapterName(const char* adapterName)
 	GLFWmonitor** monitors = glfwGetMonitors(&monitorCount);
 	for (int i = 0; i < monitorCount; i++)
 	{
-		const char* name = glfwGetWin32Adapter(monitors[i]);
+		const char* name = platform::GetAdapterName(monitors[i]);
 		if (strcmp(name, adapterName) == 0)
 			return monitors[i];
 	}
@@ -84,7 +77,7 @@ GLFWmonitor* GetMonitorFromName(const char* monitorName)
 	GLFWmonitor** monitors = glfwGetMonitors(&monitorCount);
 	for (int i = 0; i < monitorCount; i++)
 	{
-		const char* name = glfwGetWin32Adapter(monitors[i]);
+		const char* name = platform::GetAdapterName(monitors[i]);
 		if (strcmp(name, monitorName) == 0)
 			return monitors[i];
 	}
@@ -108,7 +101,7 @@ struct DisplayOutNode : NodeContext
 
 	~DisplayOutNode()
 	{
-		Clear();
+		platform::RunOnMainThread([&] { Clear(); });
 	}
 
 	bool CreateSwapchain()
@@ -116,14 +109,20 @@ struct DisplayOutNode : NodeContext
 		nosSwapchainCreateInfo createInfo = {};
 		createInfo.SurfaceHandle = Surface;
 		createInfo.ImageFormat = ColorFormat;
-		// get extent
-		int width, height;
-		glfwGetWindowSize(Window, &width, &height);
+		// Use the framebuffer (pixel) size rather than window (point) size —
+		// on HiDPI/Retina these differ by the backing scale factor, and the
+		// swapchain images must match the CAMetalLayer's drawableSize.
+		int width = 0, height = 0;
+		platform::RunOnMainThread([&] { glfwGetFramebufferSize(Window, &width, &height); });
 		createInfo.Extent = { uint32_t(width), uint32_t(height) };
 		createInfo.PresentMode = VSync ? NOS_PRESENT_MODE_FIFO : NOS_PRESENT_MODE_IMMEDIATE;
 		nosResult res = nosVulkan->CreateSwapchain(&createInfo, &Swapchain.GetStorage(), &FrameCount);
 		if (res != NOS_RESULT_SUCCESS)
+		{
+			nosEngine.LogE("DisplayOut: CreateSwapchain failed (extent %dx%d).", width, height);
 			return false;
+		}
+		nosEngine.LogI("DisplayOut: swapchain created %dx%d, frames=%u.", width, height, FrameCount);
 		nosSemaphoreCreateInfo semaphoreCreateInfo = {};
 		semaphoreCreateInfo.Type = NOS_SEMAPHORE_TYPE_BINARY;
 		Images.resize(FrameCount);
@@ -160,8 +159,12 @@ struct DisplayOutNode : NodeContext
 			return false;
 		if (!CreateSwapchain())
 		{
-			DestroyWindowSurface();
-			DestroyWindow();
+			// Do not tear down the window/surface here. A swapchain create
+			// can fail transiently (e.g. during a macOS resize the Metal
+			// layer's drawable size and Vulkan surface capabilities can be
+			// out of sync for one frame). Leaving Window/Surface intact
+			// lets the next ExecuteNode retry via this same function
+			// instead of permanently killing the node.
 			return false;
 		}
 		return true;
@@ -204,7 +207,15 @@ struct DisplayOutNode : NodeContext
 	nosResult ExecuteNode(NodeExecuteParams const& params) override
 	{
 		if (!Window)
+		{
+			static bool loggedNoWindow = false;
+			if (!loggedNoWindow)
+			{
+				nosEngine.LogW("DisplayOut: no Window yet (OnEnterRunnerThread hasn't fired?)");
+				loggedNoWindow = true;
+			}
 			return NOS_RESULT_FAILED;
+		}
 		nosScheduleNodeParams scheduleParams = {};
 		scheduleParams.NodeId = NodeId;
 		scheduleParams.Reset = false;
@@ -212,33 +223,88 @@ struct DisplayOutNode : NodeContext
 
 		auto input = params.GetPinObject<sys::vulkan::Texture>(NOS_NAME("Input"));
 		if (!input.IsValid())
-			return NOS_RESULT_FAILED;
-
-		if (!glfwWindowShouldClose(Window))
 		{
-			glfwPollEvents();
+			static bool loggedNoInput = false;
+			if (!loggedNoInput)
+			{
+				nosEngine.LogW("DisplayOut: Input pin is not connected; window will stay blank until a texture is connected.");
+				loggedNoInput = true;
+			}
+			return NOS_RESULT_FAILED;
+		}
+
+		// glfwWindowShouldClose + glfwPollEvents must be on the main thread
+		// (AppKit requirement on macOS; GLFW contract elsewhere). Batch them
+		// into one dispatch to amortize the round-trip.
+		bool shouldClose = false;
+		platform::RunOnMainThread([&] {
+			shouldClose = glfwWindowShouldClose(Window);
+			if (!shouldClose)
+				glfwPollEvents();
+		});
+
+		if (!shouldClose)
+		{
 			const char* errDesc;
 			int err = glfwGetError(&errDesc);
 			if (err != GLFW_NO_ERROR)
 			{
-				nosEngine.LogE("Error: %s", errDesc);
+				nosEngine.LogE("DisplayOut: GLFW error %d: %s", err, errDesc ? errDesc : "");
 				return NOS_RESULT_FAILED;
+			}
+
+			// If an earlier TryCreateSwapchain failed, our per-frame arrays
+			// are empty; attempt a fresh create before touching them so we
+			// don't index out of bounds.
+			if (!Swapchain || WaitSemaphore.empty())
+			{
+				if (!TryCreateSwapchain())
+				{
+					nosEngine.ScheduleNode(&scheduleParams);
+					return NOS_RESULT_FAILED;
+				}
+				CurrentFrame = 0;
 			}
 
 			uint32_t imageIndex;
 			constexpr uint32_t retryCount = 2;
+			bool acquireOk = false;
 			for (uint32_t retryIndex = 0; retryIndex < retryCount; retryIndex++)
 			{
 				auto acquireResult = nosVulkan->SwapchainAcquireNextImage(
 					Swapchain, 100'000'000, &imageIndex, WaitSemaphore[CurrentFrame]);
 				if (acquireResult == NOS_RESULT_SUCCESS)
+				{
+					acquireOk = true;
 					break;
+				}
 				if (acquireResult == NOS_RESULT_TIMEOUT)
+				{
+					static bool loggedTimeout = false;
+					if (!loggedTimeout)
+					{
+						nosEngine.LogW("DisplayOut: SwapchainAcquireNextImage timed out.");
+						loggedTimeout = true;
+					}
 					return NOS_RESULT_PENDING;
+				}
 				if (retryIndex + 1 >= retryCount)
-					return NOS_RESULT_FAILED;
+				{
+					nosEngine.LogE("DisplayOut: SwapchainAcquireNextImage failed (result=%d) after retries.", acquireResult);
+					break;
+				}
 				if (!TryCreateSwapchain())
-					return NOS_RESULT_FAILED;
+				{
+					nosEngine.LogW("DisplayOut: Swapchain recreate failed after acquire error (result=%d); will retry next frame.", acquireResult);
+					break;
+				}
+			}
+			if (!acquireOk)
+			{
+				// Keep the node scheduled so we try again next frame instead
+				// of going permanently silent.
+				nosEngine.ScheduleNode(&scheduleParams);
+				return NOS_RESULT_FAILED;
 			}
 			if (WaitEvents[CurrentFrame])
 			{
@@ -260,20 +326,25 @@ struct DisplayOutNode : NodeContext
 			CurrentFrame = (CurrentFrame + 1) % FrameCount;
 			if (!CustomResolutionActive)
 			{
-				if (auto monitor = GetGLFWMonitor())
-				{
-					auto mode = glfwGetVideoMode(monitor);
-					if (LastEffectiveRefreshRate != mode->refreshRate)
+				bool refreshChanged = false;
+				platform::RunOnMainThread([&] {
+					if (auto monitor = GetGLFWMonitor())
 					{
-						nosEngine.SendPathRestart(NodeId);
-						LastEffectiveRefreshRate = mode->refreshRate;
+						auto mode = glfwGetVideoMode(monitor);
+						if (mode && LastEffectiveRefreshRate != mode->refreshRate)
+						{
+							LastEffectiveRefreshRate = mode->refreshRate;
+							refreshChanged = true;
+						}
 					}
-				}
+				});
+				if (refreshChanged)
+					nosEngine.SendPathRestart(NodeId);
 			}
 		}
 		else
 		{
-			Clear();
+			platform::RunOnMainThread([&] { Clear(); });
 			return NOS_RESULT_FAILED;
 		}
 
@@ -284,14 +355,29 @@ struct DisplayOutNode : NodeContext
 	{
 		if (!params.RunnerId)
 			return;
-		Clear();
+		platform::RunOnMainThread([&] { Clear(); });
 	}
 
 	void OnEnterRunnerThread(nosEnterRunnerThreadParams const& params) override
 	{
 		if (!params.RunnerId)
 			return;
-		UpdateStringList(std::string("Monitor_") + std::string(NodeId), GetPossibleMonitors());
+		platform::RunOnMainThread([&] { OnEnterRunnerThreadMain(); });
+	}
+
+	void OnEnterRunnerThreadMain()
+	{
+		auto possibleMonitors = GetPossibleMonitors();
+		UpdateStringList(std::string("Monitor_") + std::string(NodeId), possibleMonitors);
+		// Auto-select the first real monitor when the user hasn't picked
+		// one yet. possibleMonitors[0] is always the synthetic "NONE"
+		// entry, so the first actionable monitor is at index 1 if present.
+		if (!LockedMonitorPort && possibleMonitors.size() > 1)
+		{
+			const std::string& firstMonitor = possibleMonitors[1];
+			LockedMonitorPort = GetPortFromString(firstMonitor.c_str());
+			SetPinValue(NSN_Monitor, firstMonitor.c_str());
+		}
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 		Window = glfwCreateWindow(Resolution.x, Resolution.y, GetWindowName().c_str(), nullptr, nullptr);
@@ -372,16 +458,8 @@ struct DisplayOutNode : NodeContext
 			});
 
 
-		auto windowHandle =
-#if defined(WIN32)
-			glfwGetWin32Window(Window)
-#elif defined(__linux)
-			glfwGetX11Window(Window)
-#else
-#error "Unsupported platform"
-#endif
-			;
-		if (nosVulkan->CreateWindowSurface((void*)windowHandle, &Surface.GetStorage()) != NOS_RESULT_SUCCESS)
+		void* windowHandle = platform::GetVulkanWindowHandle(Window);
+		if (nosVulkan->CreateWindowSurface(windowHandle, &Surface.GetStorage()) != NOS_RESULT_SUCCESS)
 		{
 			DestroyWindow();
 			return;
@@ -445,6 +523,11 @@ struct DisplayOutNode : NodeContext
 	}
 
 	void OnPinValueChanged(nos::Name pinName, uuid const& pinId, nosBuffer value) override
+	{
+		platform::RunOnMainThread([&] { OnPinValueChangedMain(pinName, value); });
+	}
+
+	void OnPinValueChangedMain(nos::Name pinName, nosBuffer value)
 	{
 		if (pinName == NOS_NAME_STATIC("Resolution"))
 		{
@@ -518,7 +601,7 @@ struct DisplayOutNode : NodeContext
 			return;
 		if (update->Type == NOS_NODE_UPDATE_DISPLAY_NAME || update->Type == NOS_NODE_UPDATE_UNIQUE_NAME)
 			if (Window)
-				glfwSetWindowTitle(Window, GetWindowName().c_str());
+				platform::RunOnMainThread([&] { glfwSetWindowTitle(Window, GetWindowName().c_str()); });
 	}
 
 	void MoveToMonitor()
@@ -536,6 +619,15 @@ struct DisplayOutNode : NodeContext
 		}
 	}
 
+	// Fallback port identifier used when there is no CustomResolutionBase
+	// backend (e.g. macOS — NVAPI is Windows-only). We encode the
+	// GLFWmonitor pointer into GPUId so the rest of the code can keep using
+	// GPUPortIdentifier uniformly, and GetGLFWMonitor can decode it back.
+	static GPUPortIdentifier PortFromGLFWMonitor(GLFWmonitor* monitor)
+	{
+		return GPUPortIdentifier{.GPUId = monitor, .PortId = 0};
+	}
+
 	std::optional<GPUPortIdentifier> GetWindowGPUPortId()
 	{
 		if(LockedMonitorPort.has_value())
@@ -547,16 +639,17 @@ struct DisplayOutNode : NodeContext
 			monitor = glfwGetWindowMonitor(Window);
 		if (!monitor)
 			return std::nullopt;
-#if defined(WIN32)
-		const char* adapterName = glfwGetWin32Adapter(monitor);
-#endif
 		if (auto customRes = CustomResolutionBase::Get())
 		{
+			const char* adapterName = platform::GetAdapterName(monitor);
 			auto port = customRes->GetGPUPortIdFromAdapterName(adapterName);
 			CachedMonitorPort = port;
 			return port;
 		}
-		return std::nullopt;
+		// No backend: fall back to identifying monitors by GLFW pointer.
+		auto port = PortFromGLFWMonitor(monitor);
+		CachedMonitorPort = port;
+		return port;
 	}
 
 	GLFWmonitor* GetGLFWMonitor()
@@ -569,29 +662,38 @@ struct DisplayOutNode : NodeContext
 		{
 			return it->second;
 		}
-		if (auto adapterName = CustomResolutionBase::Get()->GetAdapterName(*port, GetPossibleAdapterNames()))
+		if (auto* customRes = CustomResolutionBase::Get())
 		{
-			auto monitor = GetGLFWMonitorFromAdapterName(adapterName->c_str());
-			return monitor;
+			if (auto adapterName = customRes->GetAdapterName(*port, GetPossibleAdapterNames()))
+				return GetGLFWMonitorFromAdapterName(adapterName->c_str());
+			return nullptr;
 		}
-		return nullptr;
+		// No backend: GPUId is the GLFWmonitor* itself.
+		return static_cast<GLFWmonitor*>(port->GPUId);
 	}
 
 	void RequeryPortToGLFWMonitors()
 	{
 		PortToGLFWMonitor.clear();
-		if (!CustomResolutionBase::Get())
-			return;
-		auto activePorts = CustomResolutionBase::Get()->GetActivePortIds();
-		for (auto& port : activePorts)
+		if (auto* customRes = CustomResolutionBase::Get())
 		{
-			if (auto adapterName = CustomResolutionBase::Get()->GetAdapterName(port, GetPossibleAdapterNames()))
+			auto activePorts = customRes->GetActivePortIds();
+			for (auto& port : activePorts)
 			{
-				auto monitor = GetGLFWMonitorFromAdapterName(adapterName->c_str());
-				if (monitor)
-					PortToGLFWMonitor[port] = monitor;
+				if (auto adapterName = customRes->GetAdapterName(port, GetPossibleAdapterNames()))
+				{
+					auto monitor = GetGLFWMonitorFromAdapterName(adapterName->c_str());
+					if (monitor)
+						PortToGLFWMonitor[port] = monitor;
+				}
 			}
+			return;
 		}
+		// No backend: enumerate GLFW monitors directly.
+		int count = 0;
+		GLFWmonitor** monitors = glfwGetMonitors(&count);
+		for (int i = 0; i < count; ++i)
+			PortToGLFWMonitor[PortFromGLFWMonitor(monitors[i])] = monitors[i];
 	}
 
 	void ResetWindowCurrentMonitorCache()
@@ -715,11 +817,19 @@ struct DisplayOutNode : NodeContext
 
 	std::string PortToString(GPUPortIdentifier port)
 	{
-		// Get windows adapter name
 		std::string displayDisplayName = "Unknown";
-		if (auto adapterName = CustomResolutionBase::Get()->GetAdapterName(port, GetPossibleAdapterNames()))
-			if(auto monitor = GetGLFWMonitorFromAdapterName(adapterName->c_str()))
-				displayDisplayName = glfwGetMonitorName(monitor);
+		if (auto* customRes = CustomResolutionBase::Get())
+		{
+			if (auto adapterName = customRes->GetAdapterName(port, GetPossibleAdapterNames()))
+				if (auto monitor = GetGLFWMonitorFromAdapterName(adapterName->c_str()))
+					displayDisplayName = glfwGetMonitorName(monitor);
+		}
+		else if (auto* monitor = static_cast<GLFWmonitor*>(port.GPUId))
+		{
+			// No CustomResolutionBase: GPUId is the GLFWmonitor* we want.
+			if (const char* name = glfwGetMonitorName(monitor))
+				displayDisplayName = name;
+		}
 		return displayDisplayName + " - " + std::to_string((uint64_t)port.GPUId) + " - " + std::to_string(port.PortId);
 	}
 
@@ -750,11 +860,22 @@ struct DisplayOutNode : NodeContext
 
 	std::vector<std::string> GetPossibleMonitors()
 	{
-		auto activePorts = CustomResolutionBase::Get()->GetActivePortIds();
 		std::vector<std::string> monitors;
 		monitors.push_back("NONE");
-		for (auto& port : activePorts)
-			monitors.push_back(PortToString(port));
+		if (auto* customRes = CustomResolutionBase::Get())
+		{
+			auto activePorts = customRes->GetActivePortIds();
+			for (auto& port : activePorts)
+				monitors.push_back(PortToString(port));
+		}
+		else
+		{
+			// No backend: enumerate GLFW monitors directly.
+			int count = 0;
+			GLFWmonitor** glfwMonitors = glfwGetMonitors(&count);
+			for (int i = 0; i < count; ++i)
+				monitors.push_back(PortToString(PortFromGLFWMonitor(glfwMonitors[i])));
+		}
 		return monitors;
 	}
 

@@ -8,6 +8,7 @@
 #include <nosSysVulkan/nosVulkanSubsystem.h>
 
 #include "CustomResolutionBase.h"
+#include "Platform.h"
 #include "GLFW/glfw3.h"
 
 NOS_INIT()
@@ -33,7 +34,12 @@ namespace nos::display
 		bool glfwInitialized = false;
 		nosResult Initialize() override
 		{
-			if (!glfwInit())
+			// GLFW's own docs require glfwInit on the main thread, and on
+			// macOS it creates [NSApplication sharedApplication] which is a
+			// hard AppKit/main-thread requirement.
+			bool ok = false;
+			platform::RunOnMainThread([&] { ok = glfwInit() == GLFW_TRUE; });
+			if (!ok)
 			{
 				nosEngine.LogE("Failed to initialize GLFW");
 				return NOS_RESULT_FAILED;
@@ -47,7 +53,7 @@ namespace nos::display
 		{
 			if (glfwInitialized)
 			{
-				glfwTerminate();
+				platform::RunOnMainThread([] { glfwTerminate(); });
 				glfwInitialized = false;
 			}
 			if (CustomResolutionBase::Get())
