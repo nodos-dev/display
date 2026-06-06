@@ -1,5 +1,7 @@
 #include "CustomResolutionBase.h"
 
+#include <mutex>
+
 #include <Nodos/PluginHelpers.hpp>
 #include <nosVulkanSubsystem/Helpers.hpp>
 
@@ -91,6 +93,29 @@ GLFWmonitor* GetMonitorFromName(const char* monitorName)
 }
 
 NOS_REGISTER_NAME(Monitor)
+
+// glfwInit()/glfwTerminate() mutate process-global GLFW state and are not thread-safe.
+// Each DisplayOut node runs on its own runner thread, so multiple nodes (or re-opening a
+// graph) could init/terminate GLFW concurrently, or one node could terminate it out from
+// under another node's window - corrupting global state (observed as a crash while parsing
+// gamepad mappings inside glfwInit). Ref-count the init under a mutex so GLFW is initialized
+// once and terminated only when the last node releases it.
+static std::mutex GGlfwMutex;
+static int GGlfwRefCount = 0;
+
+static void AcquireGlfw()
+{
+	std::lock_guard<std::mutex> lock(GGlfwMutex);
+	if (GGlfwRefCount++ == 0)
+		glfwInit();
+}
+
+static void ReleaseGlfw()
+{
+	std::lock_guard<std::mutex> lock(GGlfwMutex);
+	if (GGlfwRefCount > 0 && --GGlfwRefCount == 0)
+		glfwTerminate();
+}
 
 struct DisplayOutNode : NodeContext
 {
@@ -200,7 +225,6 @@ struct DisplayOutNode : NodeContext
 			return;
 		glfwDestroyWindow(Window);
 		PortToGLFWMonitor.clear();
-		glfwTerminate();
 		Window = nullptr;
 	}
 
@@ -272,6 +296,8 @@ struct DisplayOutNode : NodeContext
 					{
 						nosEngine.SendPathRestart(NodeId);
 						LastEffectiveRefreshRate = mode->refreshRate;
+						if (VSync && mode->refreshRate > 0)
+							SetPinValue(NOS_NAME_STATIC("RefreshRate"), nos::Buffer::From(float(mode->refreshRate)));
 					}
 				}
 			}
@@ -290,13 +316,14 @@ struct DisplayOutNode : NodeContext
 		if (!params.RunnerId)
 			return;
 		Clear();
+		ReleaseGlfw();
 	}
 
 	void OnEnterRunnerThread(nosEnterRunnerThreadParams const& params) override
 	{
 		if (!params.RunnerId)
 			return;
-		glfwInit();
+		AcquireGlfw();
 		UpdateStringList(std::string("Monitor_") + std::string(NodeId), GetPossibleMonitors());
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
@@ -399,6 +426,7 @@ struct DisplayOutNode : NodeContext
 			UpdateCustomResolution();
 		if (Fullscreen)
 			MakeFullscreen();
+		UpdateRefreshRatePinState();
 	}
 
 	void OnPathStop() override
@@ -479,6 +507,7 @@ struct DisplayOutNode : NodeContext
 		{
 			VSync = *InterpretPinValue<bool>(value);
 			TryCreateSwapchain();
+			UpdateRefreshRatePinState();
 		}
 		else if (pinName == NOS_NAME_STATIC("RefreshRate"))
 		{
@@ -501,6 +530,7 @@ struct DisplayOutNode : NodeContext
 			MoveToMonitor();
 			if (IsCustomResolutionRequested())
 				UpdateCustomResolution();
+			UpdateRefreshRatePinState();
 		}
 		else if (pinName == NOS_NAME_STATIC("ShowCursor"))
 		{
@@ -538,8 +568,42 @@ struct DisplayOutNode : NodeContext
 		{
 			int monitorPosX, monitorPosY;
 			glfwGetMonitorPos(monitor, &monitorPosX, &monitorPosY);
+			// glfwSetWindowPos positions the content area, so in windowed (decorated) mode
+			// placing it at the monitor origin pushes the title bar off-screen. Offset by the
+			// frame's top/left inset so the title bar stays visible and grabbable.
+			if (!Fullscreen)
+			{
+				int frameLeft = 0, frameTop = 0;
+				glfwGetWindowFrameSize(Window, &frameLeft, &frameTop, nullptr, nullptr);
+				monitorPosX += frameLeft;
+				monitorPosY += frameTop;
+			}
 			glfwSetWindowPos(Window, monitorPosX, monitorPosY);
 		}
+	}
+
+	std::optional<float> GetMonitorRefreshRate()
+	{
+		if (!Window)
+			return std::nullopt;
+		if (auto monitor = GetGLFWMonitor())
+			if (const GLFWvidmode* mode = glfwGetVideoMode(monitor); mode && mode->refreshRate > 0)
+				return float(mode->refreshRate);
+		return std::nullopt;
+	}
+
+	// When VSync is on the frame rate follows the monitor, so reflect the monitor's rate and
+	// make the pin passive (read-only). When off the user drives it, so keep it active.
+	void UpdateRefreshRatePinState()
+	{
+		if (VSync)
+		{
+			if (auto rate = GetMonitorRefreshRate())
+				SetPinValue(NOS_NAME_STATIC("RefreshRate"), nos::Buffer::From(*rate));
+			SetPinOrphanState(NOS_NAME_STATIC("RefreshRate"), fb::PinOrphanStateType::PASSIVE, "Driven by VSync");
+		}
+		else
+			SetPinOrphanState(NOS_NAME_STATIC("RefreshRate"), fb::PinOrphanStateType::ACTIVE);
 	}
 
 	std::optional<GPUPortIdentifier> GetWindowGPUPortId()
