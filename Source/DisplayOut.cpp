@@ -301,7 +301,7 @@ struct DisplayOutNode : NodeContext
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 		Window = glfwCreateWindow(Resolution.x, Resolution.y, GetWindowName().c_str(), nullptr, nullptr);
-		glfwSetInputMode(Window, GLFW_CURSOR, ShowCursor ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+		glfwSetInputMode(Window, GLFW_CURSOR, ShowCursor ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_HIDDEN);
 		glfwSetWindowUserPointer(Window, this);
 		glfwSetWindowSizeCallback(Window, [](GLFWwindow* window, int width, int height) {
 			auto node = (DisplayOutNode*)glfwGetWindowUserPointer(window);
@@ -506,7 +506,7 @@ struct DisplayOutNode : NodeContext
 		{
 			ShowCursor = *InterpretPinValue<bool>(value);
 			if (Window)
-				glfwSetInputMode(Window, GLFW_CURSOR, ShowCursor ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+				glfwSetInputMode(Window, GLFW_CURSOR, ShowCursor ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_HIDDEN);
 		}
 		else if (pinName == NOS_NAME_STATIC("WindowName"))
 		{
@@ -787,7 +787,7 @@ struct DisplayOutNode : NodeContext
 	bool VSync = false;
 	float RefreshRate = 60.0f;
 	float LastEffectiveRefreshRate = 0.0f;
-	bool ShowCursor = false;
+	bool ShowCursor = true;
 	std::optional<std::string> WindowName = std::nullopt;
 
 	uint32_t ColorDepth = 32;

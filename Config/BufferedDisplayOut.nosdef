@@ -150,8 +150,8 @@
             "can_show_as": "INPUT_PIN_OR_PROPERTY",
             "visualizer": {
             },
-            "data": false,
-            "def": false,
+            "data": true,
+            "def": true,
             "contents_type": "PortalPin",
             "contents": { "source_id": "e8888ac1-7281-406c-aedc-3cd7a9140d21" },
             "display_name": "Show Cursor"
@@ -309,11 +309,11 @@
                   "can_show_as": "INPUT_PIN_OR_PROPERTY",
                   "visualizer": {
                   },
-                  "data": false,
+                  "data": true,
                   "referred_by": [
                     "d277fe69-4047-4b76-af9a-b23a610c9a58"
                   ],
-                  "def": false,
+                  "def": true,
                   "contents_type": "JobPin",
                   "contents": { }
                 },
