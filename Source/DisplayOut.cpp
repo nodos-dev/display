@@ -663,6 +663,16 @@ struct DisplayOutNode : NodeContext
 		{
 			int monitorPosX, monitorPosY;
 			glfwGetMonitorPos(monitor, &monitorPosX, &monitorPosY);
+			// glfwSetWindowPos positions the content area, so in windowed (decorated) mode
+			// placing it at the monitor origin pushes the title bar off-screen. Offset by the
+			// frame's top/left inset so the title bar stays visible and grabbable.
+			if (!Fullscreen)
+			{
+				int frameLeft = 0, frameTop = 0;
+				glfwGetWindowFrameSize(Window, &frameLeft, &frameTop, nullptr, nullptr);
+				monitorPosX += frameLeft;
+				monitorPosY += frameTop;
+			}
 			glfwSetWindowPos(Window, monitorPosX, monitorPosY);
 		}
 	}
