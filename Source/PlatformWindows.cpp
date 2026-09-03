@@ -37,10 +37,4 @@ GLFWmonitor* GetMonitorByStableId(uintptr_t id)
 	}
 	return nullptr;
 }
-
-void RunOnMainThread(std::function<void()> fn)
-{
-	if (fn)
-		fn();
-}
 }

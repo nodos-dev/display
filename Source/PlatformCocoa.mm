@@ -9,8 +9,6 @@
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
 
-#include <Nodos/Plugin.hpp>
-
 namespace nos::display::platform
 {
 const char* GetAdapterName(GLFWmonitor* monitor)
@@ -84,30 +82,5 @@ GLFWmonitor* GetMonitorByStableId(uintptr_t id)
 			return monitors[i];
 	}
 	return nullptr;
-}
-
-void RunOnMainThread(std::function<void()> fn)
-{
-	if (!fn)
-		return;
-	// If the engine exposes a main-thread dispatcher (plugin API >= 41.1),
-	// route through it. Otherwise fall back to running inline: that will
-	// crash on AppKit calls, but older engines have no way to honor the
-	// requirement and the LogE makes the reason visible.
-	if (nosEngine.RunOnMainThread)
-	{
-		nosEngine.RunOnMainThread(
-			[](void* p) { (*static_cast<std::function<void()>*>(p))(); },
-			&fn,
-			NOS_TRUE);
-		return;
-	}
-	static bool warned = false;
-	if (!warned)
-	{
-		nosEngine.LogE("nos.display: host engine has no RunOnMainThread; AppKit calls will likely crash.");
-		warned = true;
-	}
-	fn();
 }
 }

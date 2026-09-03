@@ -9,11 +9,13 @@ struct GLFWwindow;
 namespace nos::display::platform
 {
 // Runs `fn` on the launcher's main/UI thread and blocks until it returns.
-// On macOS this uses nosEngine.RunOnMainThread because AppKit window and
-// view APIs must be accessed from the main thread. On Windows and Linux
-// it runs inline — GLFW's Win32/X11 backends tolerate off-main-thread use
-// in the ways this plugin exercises, and the extra dispatch would add
-// latency to the per-frame execute path.
+// Every GLFW call in this plugin goes through here, on every platform.
+// GLFW wants window creation, event polling and monitor queries on one
+// thread. On Windows that thread also owns the message queue GLFW's hidden
+// helper window receives display changes on, so initializing on one thread
+// and polling on another leaves the monitor list frozen at load time and
+// glfwGetVideoMode starts returning null for a display that has gone away.
+// On macOS the AppKit window and view APIs only work on the main thread.
 void RunOnMainThread(std::function<void()> fn);
 
 // Returns a platform-specific adapter name for a monitor.

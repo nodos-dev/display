@@ -54,6 +54,11 @@ GLFWmonitor* get_current_monitor(GLFWwindow* window)
 
 	for (i = 0; i < nmonitors; i++) {
 		mode = glfwGetVideoMode(monitors[i]);
+		// GLFW can still list a monitor that no longer reports a mode: on
+		// Windows EnumDisplaySettings fails once the display is detached, and
+		// glfwGetVideoMode then returns null.
+		if (!mode)
+			continue;
 		glfwGetMonitorPos(monitors[i], &mx, &my);
 		mw = mode->width;
 		mh = mode->height;
@@ -277,23 +282,28 @@ struct DisplayOutNode : NodeContext
 
 		// glfwWindowShouldClose + glfwPollEvents must be on the main thread
 		// (AppKit requirement on macOS; GLFW contract elsewhere). Batch them
-		// into one dispatch to amortize the round-trip.
+		// into one dispatch to amortize the round-trip. GLFW keeps its last
+		// error per thread, so read it in there too or we never see the
+		// errors these calls raised.
 		bool shouldClose = false;
+		bool glfwFailed = false;
 		platform::RunOnMainThread([&] {
 			shouldClose = glfwWindowShouldClose(Window);
 			if (!shouldClose)
 				glfwPollEvents();
-		});
-
-		if (!shouldClose)
-		{
-			const char* errDesc;
+			const char* errDesc = nullptr;
 			int err = glfwGetError(&errDesc);
 			if (err != GLFW_NO_ERROR)
 			{
 				nosEngine.LogE("DisplayOut: GLFW error %d: %s", err, errDesc ? errDesc : "");
-				return NOS_RESULT_FAILED;
+				glfwFailed = true;
 			}
+		});
+
+		if (!shouldClose)
+		{
+			if (glfwFailed)
+				return NOS_RESULT_FAILED;
 
 			// If an earlier TryCreateSwapchain failed, our per-frame arrays
 			// are empty; attempt a fresh create before touching them so we
@@ -551,12 +561,14 @@ struct DisplayOutNode : NodeContext
 		}
 		else if (Window)
 		{
-			if (auto monitor = GetGLFWMonitor())
-			{
-				const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-				if (mode && mode->refreshRate > 0)
-					refreshRate = float(mode->refreshRate);
-			}
+			platform::RunOnMainThread([&] {
+				if (auto monitor = GetGLFWMonitor())
+				{
+					const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+					if (mode && mode->refreshRate > 0)
+						refreshRate = float(mode->refreshRate);
+				}
+			});
 		}
 		LastEffectiveRefreshRate = refreshRate;
 
@@ -829,6 +841,11 @@ struct DisplayOutNode : NodeContext
 			return;
 		}
 		auto mode = glfwGetVideoMode(monitor);
+		if (!mode)
+		{
+			nosEngine.LogE("Monitor has no current video mode");
+			return;
+		}
 		int monitorPosX, monitorPosY;
 		glfwGetMonitorPos(monitor, &monitorPosX, &monitorPosY);
 		glfwSetWindowPos(Window, monitorPosX, monitorPosY);
@@ -846,14 +863,16 @@ struct DisplayOutNode : NodeContext
 			{
 				reinterpret_cast<DisplayOutNode*>(ctx)->SetPinValue(NSN_Internal_CustomResolutionRequested,
 																nos::Buffer::From(true));
-				reinterpret_cast<DisplayOutNode*>(ctx)->UpdateCustomResolution();
+				platform::RunOnMainThread(
+					[ctx] { reinterpret_cast<DisplayOutNode*>(ctx)->UpdateCustomResolution(); });
 				return NOS_RESULT_SUCCESS;
 			};
 		outFunctionNames[1] = NOS_NAME_STATIC("RevertMonitorResolution");
 		outFunction[1] = [](void* ctx, nosFunctionExecuteParams* functionParams)
 			{
 				reinterpret_cast<DisplayOutNode*>(ctx)->SetPinValue(NSN_Internal_CustomResolutionRequested, nos::Buffer::From(false));
-				reinterpret_cast<DisplayOutNode*>(ctx)->RevertMonitorResolution();
+				platform::RunOnMainThread(
+					[ctx] { reinterpret_cast<DisplayOutNode*>(ctx)->RevertMonitorResolution(); });
 				return NOS_RESULT_SUCCESS;
 			};
 		return NOS_RESULT_SUCCESS;
