@@ -606,6 +606,11 @@ struct DisplayOutNode : NodeContext
 				else
 				{
 					glfwSetWindowAttrib(Window, GLFW_DECORATED, GLFW_TRUE);
+					// Putting the frame back leaves the content area where it
+					// was and grows the frame upwards, so the title bar ends up
+					// above the top of the monitor. Place the window again now
+					// that it has a frame to measure.
+					MoveToMonitor();
 				}
 			}
 		}
